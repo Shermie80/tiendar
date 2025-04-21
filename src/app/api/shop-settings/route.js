@@ -1,34 +1,82 @@
-// app/api/shop-settings/route.js
-
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { verifyCsrfToken } from "../../lib/csrf";
+import { z } from "zod";
+
+// Esquema de validación con Zod
+const shopSettingsSchema = z.object({
+  shop_id: z.string().uuid(),
+  primary_color: z
+    .string()
+    .regex(
+      /^#[0-9A-Fa-f]{6}$/,
+      "El color primario debe ser un código hexadecimal válido"
+    ),
+  secondary_color: z
+    .string()
+    .regex(
+      /^#[0-9A-Fa-f]{6}$/,
+      "El color secundario debe ser un código hexadecimal válido"
+    ),
+  logo_url: z
+    .string()
+    .url("La URL del logo no es válida")
+    .max(500, "La URL no puede exceder 500 caracteres")
+    .optional()
+    .nullable(),
+});
+
+async function logAction(supabase, userId, endpoint, action, details) {
+  const { error } = await supabase
+    .from("logs")
+    .insert([{ user_id: userId, endpoint, action, details }]);
+
+  if (error) {
+    console.error("Error al registrar log:", error.message);
+  }
+}
 
 export async function POST(request) {
   try {
     const cookieStore = cookies();
+    const csrfToken = request.headers.get("x-csrf-token");
+
+    if (!verifyCsrfToken(request, csrfToken)) {
+      await logAction(null, null, "/api/shop-settings", "CSRF_FAILED", {
+        message: "Token CSRF inválido",
+      });
+      return NextResponse.json(
+        { error: "Token CSRF inválido" },
+        { status: 403 }
+      );
+    }
+
     const formData = await request.formData();
     const shop_id = formData.get("shop_id");
     const primary_color = formData.get("primary_color");
     const secondary_color = formData.get("secondary_color");
     const logo_url = formData.get("logo_url") || null;
 
-    // Validar datos
-    if (!shop_id || !primary_color || !secondary_color) {
+    // Validar datos con Zod
+    const validationResult = shopSettingsSchema.safeParse({
+      shop_id,
+      primary_color,
+      secondary_color,
+      logo_url,
+    });
+
+    if (!validationResult.success) {
+      const errors = validationResult.error.errors
+        .map((err) => err.message)
+        .join(", ");
+      await logAction(null, null, "/api/shop-settings", "VALIDATION_FAILED", {
+        errors,
+      });
       return NextResponse.json(
-        { error: "Faltan campos obligatorios" },
+        { error: `Errores de validación: ${errors}` },
         { status: 400 }
       );
-    }
-
-    if (logo_url) {
-      const urlRegex = /^https?:\/\/[^\s/$.?#].[^\s]*$/;
-      if (!urlRegex.test(logo_url)) {
-        return NextResponse.json(
-          { error: "La URL del logo no es válida" },
-          { status: 400 }
-        );
-      }
     }
 
     // Crear cliente de Supabase con anon key para verificar autenticación
@@ -46,12 +94,18 @@ export async function POST(request) {
       }
     );
 
-    // Obtener la sesión del usuario
     const {
       data: { user },
     } = await supabaseAuth.auth.getUser();
 
     if (!user) {
+      await logAction(
+        supabaseAuth,
+        null,
+        "/api/shop-settings",
+        "UNAUTHORIZED",
+        { message: "Usuario no autenticado" }
+      );
       return NextResponse.json(
         { error: "No autorizado: usuario no autenticado" },
         { status: 401 }
@@ -76,12 +130,15 @@ export async function POST(request) {
     // Verificar que el shop_id pertenece al usuario autenticado
     const { data: shop, error: shopError } = await supabase
       .from("shops")
-      .select("id, shop_name")
+      .select("id")
       .eq("id", shop_id)
       .eq("user_id", user.id)
       .single();
 
     if (shopError || !shop) {
+      await logAction(supabase, user.id, "/api/shop-settings", "UNAUTHORIZED", {
+        message: "La tienda no pertenece al usuario",
+      });
       return NextResponse.json(
         { error: "No autorizado: la tienda no pertenece al usuario" },
         { status: 403 }
@@ -91,17 +148,40 @@ export async function POST(request) {
     // Actualizar o insertar configuraciones
     const { error } = await supabase
       .from("shop_settings")
-      .upsert({ shop_id, primary_color, secondary_color, logo_url });
+      .upsert(
+        { shop_id, primary_color, secondary_color, logo_url },
+        { onConflict: ["shop_id"] }
+      );
 
     if (error) {
+      await logAction(
+        supabase,
+        user.id,
+        "/api/shop-settings",
+        "UPDATE_FAILED",
+        { message: error.message }
+      );
       return NextResponse.json(
         { error: "Error al guardar configuraciones: " + error.message },
         { status: 400 }
       );
     }
 
-    return NextResponse.json({ shopName: shop.shop_name }, { status: 200 });
+    await logAction(
+      supabase,
+      user.id,
+      "/api/shop-settings",
+      "SETTINGS_UPDATED",
+      { shop_id }
+    );
+    return NextResponse.json(
+      { message: "Configuraciones guardadas correctamente" },
+      { status: 200 }
+    );
   } catch (err) {
+    await logAction(null, null, "/api/shop-settings", "SERVER_ERROR", {
+      message: err.message,
+    });
     return NextResponse.json(
       { error: "Error interno del servidor: " + err.message },
       { status: 500 }

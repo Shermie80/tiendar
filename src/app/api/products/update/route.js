@@ -1,51 +1,37 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { verifyCsrfToken } from "lib/csrf";
+import { z } from "zod";
+
+// Esquema de validación con Zod
+const updateProductSchema = z.object({
+  product_id: z.string().uuid("El ID del producto debe ser un UUID válido"),
+  name: z.string().min(1, "El nombre del producto es obligatorio"),
+  description: z.string().optional(),
+  price: z.number().min(0, "El precio debe ser mayor o igual a 0"),
+  image_url: z.string().optional(),
+});
 
 export async function POST(request) {
   try {
+    // Verificar el token CSRF
+    await verifyCsrfToken(request);
+
+    // Obtener los datos del cuerpo de la solicitud
+    const body = await request.json();
+    const { product_id, name, description, price, image_url } = body;
+
+    // Validar datos con Zod
+    const validatedData = updateProductSchema.parse({
+      product_id,
+      name,
+      description,
+      price,
+      image_url,
+    });
+
     const cookieStore = cookies();
-    const { product_id, name, description, price, image_url } =
-      await request.json();
-
-    // Validar datos
-    if (!product_id || !name || !price) {
-      return NextResponse.json(
-        { error: "Faltan campos obligatorios" },
-        { status: 400 }
-      );
-    }
-
-    if (isNaN(price) || price <= 0) {
-      return NextResponse.json(
-        { error: "El precio debe ser un número positivo" },
-        { status: 400 }
-      );
-    }
-
-    // Validar longitudes
-    if (name.length > 100) {
-      return NextResponse.json(
-        { error: "El nombre no puede exceder 100 caracteres" },
-        { status: 400 }
-      );
-    }
-    if (description && description.length > 500) {
-      return NextResponse.json(
-        { error: "La descripción no puede exceder 500 caracteres" },
-        { status: 400 }
-      );
-    }
-
-    if (image_url) {
-      const urlRegex = /^https?:\/\/[^\s/$.?#].[^\s]*$/;
-      if (!urlRegex.test(image_url) || image_url.length > 500) {
-        return NextResponse.json(
-          { error: "La URL de la imagen no es válida o excede 500 caracteres" },
-          { status: 400 }
-        );
-      }
-    }
 
     // Crear cliente de Supabase con anon key para verificar autenticación
     const supabaseAuth = createServerClient(
@@ -64,16 +50,17 @@ export async function POST(request) {
 
     const {
       data: { user },
+      error: userError,
     } = await supabaseAuth.auth.getUser();
 
-    if (!user) {
+    if (userError || !user) {
       return NextResponse.json(
         { error: "No autorizado: usuario no autenticado" },
         { status: 401 }
       );
     }
 
-    // Crear cliente de Supabase con service role key
+    // Crear cliente de Supabase con service role key para operaciones
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL,
       process.env.SUPABASE_SERVICE_ROLE_KEY,
@@ -88,11 +75,11 @@ export async function POST(request) {
       }
     );
 
-    // Verificar que el producto pertenece a una tienda del usuario
+    // Verificar que el producto existe y pertenece al usuario autenticado
     const { data: product, error: productError } = await supabase
       .from("products")
-      .select("shop_id")
-      .eq("id", product_id)
+      .select("id, shop_id")
+      .eq("id", validatedData.product_id)
       .single();
 
     if (productError || !product) {
@@ -102,40 +89,57 @@ export async function POST(request) {
       );
     }
 
+    // Verificar que el usuario es el dueño de la tienda asociada al producto
     const { data: shop, error: shopError } = await supabase
       .from("shops")
-      .select("id")
+      .select("id, user_id")
       .eq("id", product.shop_id)
-      .eq("user_id", user.id)
       .single();
 
     if (shopError || !shop) {
+      return NextResponse.json(
+        { error: "Tienda no encontrada" },
+        { status: 404 }
+      );
+    }
+
+    if (shop.user_id !== user.id) {
       return NextResponse.json(
         { error: "No autorizado: el producto no pertenece al usuario" },
         { status: 403 }
       );
     }
 
-    // Actualizar producto
-    const { error } = await supabase
+    // Actualizar el producto en la base de datos
+    const { data: updatedProduct, error: updateError } = await supabase
       .from("products")
-      .update({ name, description, price, image_url })
-      .eq("id", product_id);
+      .update({
+        name: validatedData.name,
+        description: validatedData.description,
+        price: validatedData.price,
+        image_url: validatedData.image_url,
+      })
+      .eq("id", validatedData.product_id)
+      .select()
+      .single();
 
-    if (error) {
+    if (updateError) {
       return NextResponse.json(
-        { error: "Error al actualizar el producto: " + error.message },
+        { error: "Error al actualizar el producto: " + updateError.message },
         { status: 400 }
       );
     }
 
-    return NextResponse.json(
-      { message: "Producto actualizado correctamente" },
-      { status: 200 }
-    );
+    return NextResponse.json({ updatedProduct }, { status: 200 });
   } catch (err) {
+    if (err instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: "Datos inválidos", details: err.errors },
+        { status: 400 }
+      );
+    }
     return NextResponse.json(
-      { error: "Error interno del servidor: " + err.message },
+      { error: err.message || "Error interno del servidor" },
       { status: 500 }
     );
   }

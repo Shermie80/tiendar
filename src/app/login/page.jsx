@@ -1,5 +1,3 @@
-// app/login/page.jsx
-
 "use client";
 
 import { useState, useEffect } from "react";
@@ -10,17 +8,31 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
   const router = useRouter();
 
-  // Depurar estado de autenticación
+  // Verificar sesión inicial
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      console.log("[Login] Sesión inicial:", session);
-      if (session) {
-        console.log("[Login] Usuario ya autenticado, redirigiendo...");
-        redirectToShop(session.user.id);
+    const checkSession = async () => {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        console.log("[Login] Sesión inicial:", session);
+        if (session) {
+          console.log("[Login] Usuario ya autenticado, redirigiendo...");
+          await redirectToShop(session.user.id);
+        }
+      } catch (err) {
+        console.error("[Login] Error al verificar sesión:", err.message);
+        setError("Error al verificar la sesión");
+      } finally {
+        setCheckingSession(false);
       }
-    });
+    };
+
+    checkSession();
   }, []);
 
   const redirectToShop = async (userId) => {
@@ -55,6 +67,7 @@ export default function LoginPage() {
   const handleLogin = async (e) => {
     e.preventDefault();
     setError(null);
+    setLoading(true);
 
     try {
       console.log("[Login] Intentando iniciar sesión con:", email);
@@ -66,24 +79,28 @@ export default function LoginPage() {
       if (error) {
         console.error("[Login] Error al iniciar sesión:", error.message);
         setError(error.message);
+        setLoading(false);
         return;
       }
 
       console.log("[Login] Sesión iniciada:", data.session);
-
-      // Actualizar la sesión en el cliente
-      await supabase.auth.setSession({
-        access_token: data.session.access_token,
-        refresh_token: data.session.refresh_token,
-      });
 
       // Redirigir
       await redirectToShop(data.user.id);
     } catch (err) {
       console.error("[Login] Error inesperado:", err.message);
       setError("Error al iniciar sesión");
+      setLoading(false);
     }
   };
+
+  if (checkingSession) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-100">
+        <p>Cargando...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-100">
@@ -105,6 +122,7 @@ export default function LoginPage() {
               onChange={(e) => setEmail(e.target.value)}
               className="mt-1 w-full rounded-md border border-gray-300 p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
               required
+              disabled={loading}
             />
           </div>
           <div className="mb-6">
@@ -121,13 +139,19 @@ export default function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
               className="mt-1 w-full rounded-md border border-gray-300 p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
               required
+              disabled={loading}
             />
           </div>
           <button
             type="submit"
-            className="w-full rounded-md bg-blue-500 py-2 text-white hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className={`w-full rounded-md py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+              loading
+                ? "bg-blue-400 cursor-not-allowed"
+                : "bg-blue-500 hover:bg-blue-600"
+            }`}
+            disabled={loading}
           >
-            Iniciar Sesión
+            {loading ? "Iniciando sesión..." : "Iniciar Sesión"}
           </button>
         </form>
       </div>

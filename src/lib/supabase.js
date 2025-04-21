@@ -25,11 +25,10 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
 supabase.auth.onAuthStateChange((event, session) => {
   console.log("[Supabase] Evento de autenticación:", event, session);
   if (event === "SIGNED_IN" && session) {
-    // Forzar la configuración de cookies
     document.cookie = `sb-vxipkqfzmumfyzumsryb-auth-token=${JSON.stringify({
       access_token: session.access_token,
       refresh_token: session.refresh_token,
       expires_at: session.expires_at,
-    })}; path=/; secure; samesite=lax`;
+    })}; path=/; samesite=lax`;
   }
 });

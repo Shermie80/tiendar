@@ -1,8 +1,7 @@
-// app/[shopName]/admin/page.jsx
-
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "../../../lib/supabase";
 import Navbar from "../../../components/Navbar";
 
@@ -13,55 +12,77 @@ export default function AdminPage({ params }) {
   const [editingProduct, setEditingProduct] = useState(null);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [newProduct, setNewProduct] = useState({
     name: "",
     description: "",
     price: "",
-    image_url: "",
   });
+  const [csrfToken, setCsrfToken] = useState(null);
+  const router = useRouter();
+
+  // Verificar autenticación al cargar la página
+  useEffect(() => {
+    const checkSession = async () => {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (!session) {
+          router.push("/login"); // Redirigir a la página de login si no hay sesión
+        }
+      } catch (err) {
+        setError("Error al verificar la sesión");
+        setLoading(false);
+      }
+    };
+
+    checkSession();
+  }, [router]);
+
+  // Obtener token CSRF al cargar la página
+  useEffect(() => {
+    const fetchCsrfToken = async () => {
+      try {
+        const response = await fetch("/api/csrf-token");
+        if (!response.ok) {
+          const result = await response.json();
+          throw new Error(result.error || "Error al obtener el token CSRF");
+        }
+        const result = await response.json();
+        setCsrfToken(result.csrfToken);
+      } catch (err) {
+        setError(err.message);
+        setLoading(false);
+      }
+    };
+
+    fetchCsrfToken();
+  }, []);
 
   // Obtener datos iniciales
   useEffect(() => {
     const fetchData = async () => {
-      const { shopName } = await params;
+      const shopName = params.shopName;
 
-      const { data: shopData, error: shopError } = await supabase
-        .from("shops")
-        .select("*")
-        .eq("shop_name", shopName)
-        .single();
+      try {
+        const response = await fetch(`/api/shop-data?shopName=${shopName}`);
+        if (!response.ok) {
+          const result = await response.json();
+          throw new Error(
+            result.error || "Error al cargar los datos de la tienda"
+          );
+        }
+        const result = await response.json();
 
-      if (shopError || !shopData) {
-        setError("Tienda no encontrada");
-        return;
+        setShop(result.shop);
+        setSettings(result.settings);
+        setProducts(result.products);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
       }
-
-      setShop(shopData);
-
-      const { data: settingsData, error: settingsError } = await supabase
-        .from("shop_settings")
-        .select("*")
-        .eq("shop_id", shopData.id)
-        .single();
-
-      if (settingsError && settingsError.code !== "PGRST116") {
-        console.error("Error fetching shop settings:", settingsError);
-      }
-
-      setSettings(
-        settingsData || { primary_color: "#2563eb", secondary_color: "#1f2937" }
-      );
-
-      const { data: productsData, error: productsError } = await supabase
-        .from("products")
-        .select("*")
-        .eq("shop_id", shopData.id);
-
-      if (productsError) {
-        console.error("Error fetching products:", productsError);
-      }
-
-      setProducts(productsData || []);
     };
 
     fetchData();
@@ -83,6 +104,7 @@ export default function AdminPage({ params }) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "x-csrf-token": csrfToken,
         },
         body: JSON.stringify({
           product_id: id,
@@ -93,11 +115,12 @@ export default function AdminPage({ params }) {
         }),
       });
 
-      const result = await response.json();
-
       if (!response.ok) {
+        const result = await response.json();
         throw new Error(result.error || "Error al actualizar el producto");
       }
+
+      const result = await response.json();
 
       setProducts(
         products.map((p) =>
@@ -120,15 +143,17 @@ export default function AdminPage({ params }) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "x-csrf-token": csrfToken,
         },
         body: JSON.stringify({ product_id: productId }),
       });
 
-      const result = await response.json();
-
       if (!response.ok) {
+        const result = await response.json();
         throw new Error(result.error || "Error al eliminar el producto");
       }
+
+      const result = await response.json();
 
       setProducts(products.filter((p) => p.id !== productId));
       setSuccess("Producto eliminado correctamente");
@@ -143,30 +168,25 @@ export default function AdminPage({ params }) {
     setSuccess(null);
 
     try {
+      const formData = new FormData(e.target);
       const response = await fetch("/api/products", {
         method: "POST",
-        body: new FormData(e.target),
+        headers: {
+          "x-csrf-token": csrfToken,
+        },
+        body: formData,
       });
 
-      const result = await response.json();
-
       if (!response.ok) {
+        const result = await response.json();
         throw new Error(result.error || "Error al agregar el producto");
       }
 
-      const { data: newProductData } = await supabase
-        .from("products")
-        .select("*")
-        .eq("shop_id", shop.id)
-        .order("created_at", { ascending: false })
-        .limit(1);
+      const result = await response.json();
 
-      if (newProductData && newProductData.length > 0) {
-        setProducts([newProductData[0], ...products]);
-      }
-
+      setProducts([result.newProduct, ...products]);
       setSuccess("Producto agregado correctamente");
-      setNewProduct({ name: "", description: "", price: "", image_url: "" });
+      setNewProduct({ name: "", description: "", price: "" });
     } catch (err) {
       setError(err.message);
     }
@@ -181,20 +201,32 @@ export default function AdminPage({ params }) {
       const formData = new FormData(e.target);
       const response = await fetch("/api/shop-settings", {
         method: "POST",
+        headers: {
+          "x-csrf-token": csrfToken,
+        },
         body: formData,
       });
 
-      const result = await response.json();
-
       if (!response.ok) {
+        const result = await response.json();
         throw new Error(result.error || "Error al guardar configuraciones");
       }
+
+      const result = await response.json();
 
       setSuccess("Configuraciones guardadas correctamente");
     } catch (err) {
       setError(err.message);
     }
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p>Cargando...</p>
+      </div>
+    );
+  }
 
   if (error) {
     return (
@@ -205,7 +237,11 @@ export default function AdminPage({ params }) {
   }
 
   if (!shop) {
-    return <div>Cargando...</div>;
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p>No se encontraron datos de la tienda.</p>
+      </div>
+    );
   }
 
   return (
@@ -326,19 +362,17 @@ export default function AdminPage({ params }) {
               </div>
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700">
-                  URL de la imagen (opcional)
+                  Imagen actual (no editable)
                 </label>
-                <input
-                  type="text"
-                  value={editingProduct.image_url || ""}
-                  onChange={(e) =>
-                    setEditingProduct({
-                      ...editingProduct,
-                      image_url: e.target.value,
-                    })
-                  }
-                  className="mt-1 p-2 w-full border rounded"
-                />
+                {editingProduct.image_url ? (
+                  <img
+                    src={editingProduct.image_url}
+                    alt="Imagen actual"
+                    className="w-32 h-32 object-cover rounded"
+                  />
+                ) : (
+                  <p>No hay imagen</p>
+                )}
               </div>
               {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
               {success && (
@@ -369,6 +403,7 @@ export default function AdminPage({ params }) {
           <form
             onSubmit={handleAddProduct}
             className="bg-white p-6 rounded shadow-md max-w-lg"
+            encType="multipart/form-data"
           >
             <input type="hidden" name="shop_id" value={shop.id} />
             <div className="mb-4">
@@ -417,15 +452,11 @@ export default function AdminPage({ params }) {
             </div>
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700">
-                URL de la imagen (opcional)
+                Imagen (opcional)
               </label>
               <input
                 type="text"
                 name="image_url"
-                value={newProduct.image_url}
-                onChange={(e) =>
-                  setNewProduct({ ...newProduct, image_url: e.target.value })
-                }
                 className="mt-1 p-2 w-full border rounded"
               />
             </div>

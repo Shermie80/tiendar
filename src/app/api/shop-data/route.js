@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 
 export async function GET(request) {
   try {
@@ -13,7 +14,35 @@ export async function GET(request) {
       );
     }
 
-    // Crear cliente de Supabase con service role key (no requiere autenticación)
+    const cookieStore = cookies();
+
+    // Crear cliente de Supabase con anon key para verificar autenticación
+    const supabaseAuth = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      {
+        cookies: {
+          get(name) {
+            return cookieStore.get(name)?.value;
+          },
+          set() {},
+          remove() {},
+        },
+      }
+    );
+
+    const {
+      data: { user },
+    } = await supabaseAuth.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json(
+        { error: "No autorizado: usuario no autenticado" },
+        { status: 401 }
+      );
+    }
+
+    // Crear cliente de Supabase con service role key para operaciones
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL,
       process.env.SUPABASE_SERVICE_ROLE_KEY,
@@ -31,7 +60,7 @@ export async function GET(request) {
     // Buscar la tienda por shop_name
     const { data: shop, error: shopError } = await supabase
       .from("shops")
-      .select("id, shop_name")
+      .select("id, shop_name, user_id")
       .eq("shop_name", shopName)
       .single();
 
@@ -39,6 +68,14 @@ export async function GET(request) {
       return NextResponse.json(
         { error: "Tienda no encontrada" },
         { status: 404 }
+      );
+    }
+
+    // Verificar que la tienda pertenece al usuario autenticado
+    if (shop.user_id !== user.id) {
+      return NextResponse.json(
+        { error: "No autorizado: la tienda no pertenece al usuario" },
+        { status: 403 }
       );
     }
 
