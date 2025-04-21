@@ -1,3 +1,5 @@
+const path = require("path");
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -10,16 +12,20 @@ const nextConfig = {
             key: "Content-Security-Policy",
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval'", // Permitir 'unsafe-eval'
-              "style-src 'self' 'unsafe-inline'", // Solo estilos locales
-              "font-src 'self'", // Solo fuentes locales
-              "img-src 'self' data:", // Permitir imágenes locales y data URLs
-              "connect-src 'self' ws://localhost:3000 wss://localhost:3000 https://*.supabase.co", // Conexiones a Supabase y WebSockets
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+              "style-src 'self' 'unsafe-inline'",
+              "font-src 'self'",
+              "img-src 'self' data:",
+              "connect-src 'self' ws://localhost:3000 wss://localhost:3000 https://*.supabase.co",
             ].join("; "),
           },
         ],
       },
     ];
+  },
+  webpack: (config) => {
+    config.resolve.alias["lib"] = path.join(__dirname, "src/lib");
+    return config;
   },
 };
 

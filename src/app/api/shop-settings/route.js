@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { verifyCsrfToken } from "../../lib/csrf";
+import { verifyCsrfToken } from "lib/csrf";
 import { z } from "zod";
 
 // Esquema de validación con Zod
@@ -40,11 +40,13 @@ async function logAction(supabase, userId, endpoint, action, details) {
 export async function POST(request) {
   try {
     const cookieStore = cookies();
-    const csrfToken = request.headers.get("x-csrf-token");
 
-    if (!verifyCsrfToken(request, csrfToken)) {
+    // Verificar el token CSRF
+    try {
+      verifyCsrfToken(request); // Eliminamos el segundo parámetro
+    } catch (csrfError) {
       await logAction(null, null, "/api/shop-settings", "CSRF_FAILED", {
-        message: "Token CSRF inválido",
+        message: csrfError.message,
       });
       return NextResponse.json(
         { error: "Token CSRF inválido" },
@@ -52,6 +54,7 @@ export async function POST(request) {
       );
     }
 
+    // Obtener datos del FormData
     const formData = await request.formData();
     const shop_id = formData.get("shop_id");
     const primary_color = formData.get("primary_color");
@@ -96,9 +99,10 @@ export async function POST(request) {
 
     const {
       data: { user },
+      error: userError,
     } = await supabaseAuth.auth.getUser();
 
-    if (!user) {
+    if (userError || !user) {
       await logAction(
         supabaseAuth,
         null,
@@ -145,24 +149,50 @@ export async function POST(request) {
       );
     }
 
-    // Actualizar o insertar configuraciones
-    const { error } = await supabase
+    // Buscar el registro existente en shop_settings para obtener el id
+    const { data: existingSettings, error: fetchError } = await supabase
       .from("shop_settings")
-      .upsert(
-        { shop_id, primary_color, secondary_color, logo_url },
-        { onConflict: ["shop_id"] }
-      );
+      .select("id")
+      .eq("shop_id", shop_id)
+      .single();
 
-    if (error) {
+    if (fetchError && fetchError.code !== "PGRST116") {
+      // PGRST116 significa "no rows found", lo cual es esperado si no existe el registro
+      await logAction(supabase, user.id, "/api/shop-settings", "FETCH_FAILED", {
+        message: fetchError.message,
+      });
+      return NextResponse.json(
+        { error: "Error al buscar configuraciones: " + fetchError.message },
+        { status: 400 }
+      );
+    }
+
+    // Preparar el objeto para el upsert
+    const settingsData = {
+      id: existingSettings?.id, // Incluimos el id si existe
+      shop_id,
+      primary_color,
+      secondary_color,
+      logo_url,
+    };
+
+    // Actualizar o insertar configuraciones
+    const { data: updatedSettings, error: updateError } = await supabase
+      .from("shop_settings")
+      .upsert(settingsData, { onConflict: "shop_id" })
+      .select()
+      .single();
+
+    if (updateError) {
       await logAction(
         supabase,
         user.id,
         "/api/shop-settings",
         "UPDATE_FAILED",
-        { message: error.message }
+        { message: updateError.message }
       );
       return NextResponse.json(
-        { error: "Error al guardar configuraciones: " + error.message },
+        { error: "Error al guardar configuraciones: " + updateError.message },
         { status: 400 }
       );
     }
@@ -175,7 +205,10 @@ export async function POST(request) {
       { shop_id }
     );
     return NextResponse.json(
-      { message: "Configuraciones guardadas correctamente" },
+      {
+        message: "Configuraciones guardadas correctamente",
+        updatedSettings,
+      },
       { status: 200 }
     );
   } catch (err) {
