@@ -73,38 +73,68 @@ export default function AdminPage({ params }) {
 
   const handleUpdateProduct = async (e) => {
     e.preventDefault();
+    setError(null);
+    setSuccess(null);
+
     const { id, name, description, price, image_url } = editingProduct;
 
-    const { error: updateError } = await supabase
-      .from("products")
-      .update({ name, description, price, image_url })
-      .eq("id", id);
+    try {
+      const response = await fetch("/api/products/update", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          product_id: id,
+          name,
+          description,
+          price,
+          image_url,
+        }),
+      });
 
-    if (updateError) {
-      setError(updateError.message);
-      return;
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Error al actualizar el producto");
+      }
+
+      setProducts(
+        products.map((p) =>
+          p.id === id ? { ...p, name, description, price, image_url } : p
+        )
+      );
+      setEditingProduct(null);
+      setSuccess("Producto actualizado correctamente");
+    } catch (err) {
+      setError(err.message);
     }
-
-    setProducts(
-      products.map((p) =>
-        p.id === id ? { ...p, name, description, price, image_url } : p
-      )
-    );
-    setEditingProduct(null);
   };
 
   const handleDeleteProduct = async (productId) => {
-    const { error: deleteError } = await supabase
-      .from("products")
-      .delete()
-      .eq("id", productId);
+    setError(null);
+    setSuccess(null);
 
-    if (deleteError) {
-      setError(deleteError.message);
-      return;
+    try {
+      const response = await fetch("/api/products/delete", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ product_id: productId }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Error al eliminar el producto");
+      }
+
+      setProducts(products.filter((p) => p.id !== productId));
+      setSuccess("Producto eliminado correctamente");
+    } catch (err) {
+      setError(err.message);
     }
-
-    setProducts(products.filter((p) => p.id !== productId));
   };
 
   const handleAddProduct = async (e) => {
@@ -124,7 +154,6 @@ export default function AdminPage({ params }) {
         throw new Error(result.error || "Error al agregar el producto");
       }
 
-      // Actualizar la lista de productos
       const { data: newProductData } = await supabase
         .from("products")
         .select("*")
@@ -138,6 +167,30 @@ export default function AdminPage({ params }) {
 
       setSuccess("Producto agregado correctamente");
       setNewProduct({ name: "", description: "", price: "", image_url: "" });
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const handleUpdateSettings = async (e) => {
+    e.preventDefault();
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const formData = new FormData(e.target);
+      const response = await fetch("/api/shop-settings", {
+        method: "POST",
+        body: formData,
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Error al guardar configuraciones");
+      }
+
+      setSuccess("Configuraciones guardadas correctamente");
     } catch (err) {
       setError(err.message);
     }
@@ -251,7 +304,7 @@ export default function AdminPage({ params }) {
                     })
                   }
                   className="mt-1 p-2 w-full border rounded"
-                ></textarea>
+                />
               </div>
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700">
@@ -287,6 +340,10 @@ export default function AdminPage({ params }) {
                   className="mt-1 p-2 w-full border rounded"
                 />
               </div>
+              {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
+              {success && (
+                <p className="text-green-500 text-sm mb-4">{success}</p>
+              )}
               <div className="space-x-2">
                 <button
                   type="submit"
@@ -340,7 +397,7 @@ export default function AdminPage({ params }) {
                   setNewProduct({ ...newProduct, description: e.target.value })
                 }
                 className="mt-1 p-2 w-full border rounded"
-              ></textarea>
+              />
             </div>
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700">
@@ -389,8 +446,7 @@ export default function AdminPage({ params }) {
         <div>
           <h2 className="text-2xl font-semibold mb-4">Personalizar Tienda</h2>
           <form
-            action="/api/shop-settings"
-            method="POST"
+            onSubmit={handleUpdateSettings}
             className="bg-white p-6 rounded shadow-md max-w-lg"
           >
             <input type="hidden" name="shop_id" value={shop.id} />
@@ -427,6 +483,10 @@ export default function AdminPage({ params }) {
                 className="mt-1 p-2 w-full border rounded"
               />
             </div>
+            {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
+            {success && (
+              <p className="text-green-500 text-sm mb-4">{success}</p>
+            )}
             <button
               type="submit"
               className="w-full bg-blue-600 text-white p-2 rounded hover:bg-blue-700"

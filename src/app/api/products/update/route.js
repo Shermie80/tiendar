@@ -2,46 +2,14 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
-// Simple in-memory rate limiter
-const rateLimitMap = new Map();
-const RATE_LIMIT = 5; // Max requests
-const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute in milliseconds
-
-function rateLimit(userId) {
-  const now = Date.now();
-  const userRequests = rateLimitMap.get(userId) || { count: 0, start: now };
-
-  if (now - userRequests.start > RATE_LIMIT_WINDOW) {
-    userRequests.count = 0;
-    userRequests.start = now;
-  }
-
-  userRequests.count += 1;
-  rateLimitMap.set(userId, userRequests);
-
-  if (userRequests.count > RATE_LIMIT) {
-    return false;
-  }
-  return true;
-}
-
 export async function POST(request) {
   try {
     const cookieStore = cookies();
-    const formData = await request.formData();
-    const shop_id = formData.get("shop_id");
-    let name = formData.get("name");
-    let description = formData.get("description");
-    const price = parseFloat(formData.get("price"));
-    let image_url = formData.get("image_url") || null;
-
-    // Sanitizar entradas
-    name = name ? String(name).trim().slice(0, 100) : null;
-    description = description ? String(description).trim().slice(0, 500) : null;
-    image_url = image_url ? String(image_url).trim().slice(0, 500) : null;
+    const { product_id, name, description, price, image_url } =
+      await request.json();
 
     // Validar datos
-    if (!shop_id || !name || !price) {
+    if (!product_id || !name || !price) {
       return NextResponse.json(
         { error: "Faltan campos obligatorios" },
         { status: 400 }
@@ -55,11 +23,25 @@ export async function POST(request) {
       );
     }
 
+    // Validar longitudes
+    if (name.length > 100) {
+      return NextResponse.json(
+        { error: "El nombre no puede exceder 100 caracteres" },
+        { status: 400 }
+      );
+    }
+    if (description && description.length > 500) {
+      return NextResponse.json(
+        { error: "La descripción no puede exceder 500 caracteres" },
+        { status: 400 }
+      );
+    }
+
     if (image_url) {
       const urlRegex = /^https?:\/\/[^\s/$.?#].[^\s]*$/;
-      if (!urlRegex.test(image_url)) {
+      if (!urlRegex.test(image_url) || image_url.length > 500) {
         return NextResponse.json(
-          { error: "La URL de la imagen no es válida" },
+          { error: "La URL de la imagen no es válida o excede 500 caracteres" },
           { status: 400 }
         );
       }
@@ -91,15 +73,7 @@ export async function POST(request) {
       );
     }
 
-    // Aplicar rate limiting
-    if (!rateLimit(user.id)) {
-      return NextResponse.json(
-        { error: "Demasiadas solicitudes, intenta de nuevo más tarde" },
-        { status: 429 }
-      );
-    }
-
-    // Crear cliente de Supabase con service role key para operaciones
+    // Crear cliente de Supabase con service role key
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL,
       process.env.SUPABASE_SERVICE_ROLE_KEY,
@@ -114,34 +88,51 @@ export async function POST(request) {
       }
     );
 
-    // Verificar que el shop_id pertenece al usuario autenticado
+    // Verificar que el producto pertenece a una tienda del usuario
+    const { data: product, error: productError } = await supabase
+      .from("products")
+      .select("shop_id")
+      .eq("id", product_id)
+      .single();
+
+    if (productError || !product) {
+      return NextResponse.json(
+        { error: "Producto no encontrado" },
+        { status: 404 }
+      );
+    }
+
     const { data: shop, error: shopError } = await supabase
       .from("shops")
-      .select("id, shop_name")
-      .eq("id", shop_id)
+      .select("id")
+      .eq("id", product.shop_id)
       .eq("user_id", user.id)
       .single();
 
     if (shopError || !shop) {
       return NextResponse.json(
-        { error: "No autorizado: la tienda no pertenece al usuario" },
+        { error: "No autorizado: el producto no pertenece al usuario" },
         { status: 403 }
       );
     }
 
-    // Insertar producto
+    // Actualizar producto
     const { error } = await supabase
       .from("products")
-      .insert([{ shop_id, name, description, price, image_url }]);
+      .update({ name, description, price, image_url })
+      .eq("id", product_id);
 
     if (error) {
       return NextResponse.json(
-        { error: "Error al agregar el producto: " + error.message },
+        { error: "Error al actualizar el producto: " + error.message },
         { status: 400 }
       );
     }
 
-    return NextResponse.json({ shopName: shop.shop_name }, { status: 200 });
+    return NextResponse.json(
+      { message: "Producto actualizado correctamente" },
+      { status: 200 }
+    );
   } catch (err) {
     return NextResponse.json(
       { error: "Error interno del servidor: " + err.message },

@@ -1,5 +1,3 @@
-// app/api/shop-settings/route.js
-
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
@@ -7,28 +5,13 @@ import { cookies } from "next/headers";
 export async function POST(request) {
   try {
     const cookieStore = cookies();
-    const formData = await request.formData();
-    const shop_id = formData.get("shop_id");
-    const primary_color = formData.get("primary_color");
-    const secondary_color = formData.get("secondary_color");
-    const logo_url = formData.get("logo_url") || null;
+    const { product_id } = await request.json();
 
-    // Validar datos
-    if (!shop_id || !primary_color || !secondary_color) {
+    if (!product_id) {
       return NextResponse.json(
-        { error: "Faltan campos obligatorios" },
+        { error: "Falta el ID del producto" },
         { status: 400 }
       );
-    }
-
-    if (logo_url) {
-      const urlRegex = /^https?:\/\/[^\s/$.?#].[^\s]*$/;
-      if (!urlRegex.test(logo_url)) {
-        return NextResponse.json(
-          { error: "La URL del logo no es válida" },
-          { status: 400 }
-        );
-      }
     }
 
     // Crear cliente de Supabase con anon key para verificar autenticación
@@ -46,7 +29,6 @@ export async function POST(request) {
       }
     );
 
-    // Obtener la sesión del usuario
     const {
       data: { user },
     } = await supabaseAuth.auth.getUser();
@@ -58,7 +40,7 @@ export async function POST(request) {
       );
     }
 
-    // Crear cliente de Supabase con service role key para operaciones
+    // Crear cliente de Supabase con service role key
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL,
       process.env.SUPABASE_SERVICE_ROLE_KEY,
@@ -73,34 +55,51 @@ export async function POST(request) {
       }
     );
 
-    // Verificar que el shop_id pertenece al usuario autenticado
+    // Verificar que el producto pertenece a una tienda del usuario
+    const { data: product, error: productError } = await supabase
+      .from("products")
+      .select("shop_id")
+      .eq("id", product_id)
+      .single();
+
+    if (productError || !product) {
+      return NextResponse.json(
+        { error: "Producto no encontrado" },
+        { status: 404 }
+      );
+    }
+
     const { data: shop, error: shopError } = await supabase
       .from("shops")
-      .select("id, shop_name")
-      .eq("id", shop_id)
+      .select("id")
+      .eq("id", product.shop_id)
       .eq("user_id", user.id)
       .single();
 
     if (shopError || !shop) {
       return NextResponse.json(
-        { error: "No autorizado: la tienda no pertenece al usuario" },
+        { error: "No autorizado: el producto no pertenece al usuario" },
         { status: 403 }
       );
     }
 
-    // Actualizar o insertar configuraciones
+    // Eliminar producto
     const { error } = await supabase
-      .from("shop_settings")
-      .upsert({ shop_id, primary_color, secondary_color, logo_url });
+      .from("products")
+      .delete()
+      .eq("id", product_id);
 
     if (error) {
       return NextResponse.json(
-        { error: "Error al guardar configuraciones: " + error.message },
+        { error: "Error al eliminar el producto: " + error.message },
         { status: 400 }
       );
     }
 
-    return NextResponse.json({ shopName: shop.shop_name }, { status: 200 });
+    return NextResponse.json(
+      { message: "Producto eliminado correctamente" },
+      { status: 200 }
+    );
   } catch (err) {
     return NextResponse.json(
       { error: "Error interno del servidor: " + err.message },
