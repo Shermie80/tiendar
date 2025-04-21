@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { verifyCsrfToken } from "lib/csrf";
+import { verifyCsrfToken } from "../../../lib/csrf";
 import { z } from "zod";
 
 const RATE_LIMIT = 5; // Máximo de solicitudes por minuto
