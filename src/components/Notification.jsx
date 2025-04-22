@@ -10,18 +10,18 @@ const Notification = () => {
       {notifications.map((notification) => (
         <div
           key={notification.id}
-          className={`flex items-center justify-between p-4 rounded-lg shadow-lg transition-all duration-300 transform animate-slide-in ${
+          className={`flex items-center justify-between p-4 rounded-lg shadow-lg transition-all duration-300 transform animate-slide-in border border-gray-200 border-x-2 text-gray-700 bg-white ${
             notification.type === "error"
-              ? "bg-red-500 text-white"
+              ? "border-l-red-400"
               : notification.type === "success"
-              ? "bg-green-500 text-white"
-              : "bg-blue-500 text-white"
+              ? "border-l-green-400"
+              : "border-l-blue-400"
           }`}
         >
           <span>{notification.message}</span>
           <button
             onClick={() => removeNotification(notification.id)}
-            className="ml-4 text-white hover:text-gray-200"
+            className="ml-4 text-gray-500 hover:text-gray-400"
           >
             ✕
           </button>

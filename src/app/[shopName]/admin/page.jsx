@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../../lib/supabase";
-import Navbar from "../../../components/Navbar";
+import Sidebar from "../../../components/Sidebar";
 import { useNotification } from "@/lib/NotificationContext";
 
 export default function AdminPage({ params }) {
@@ -20,6 +20,7 @@ export default function AdminPage({ params }) {
   const [csrfToken, setCsrfToken] = useState(null);
   const router = useRouter();
   const { addNotification } = useNotification();
+  const { shopName } = params;
 
   // Verificar autenticación al cargar la página
   useEffect(() => {
@@ -192,33 +193,7 @@ export default function AdminPage({ params }) {
       setProducts([result.newProduct, ...products]);
       addNotification("Producto agregado correctamente", "success");
       setNewProduct({ name: "", description: "", price: "" });
-      e.target.reset(); // Resetear el formulario
-    } catch (err) {
-      addNotification(err.message, "error");
-    }
-  };
-
-  const handleUpdateSettings = async (e) => {
-    e.preventDefault();
-
-    try {
-      const formData = new FormData(e.target);
-      const response = await fetch("/api/shop-settings", {
-        method: "POST",
-        headers: {
-          "x-csrf-token": csrfToken,
-        },
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const result = await response.json();
-        throw new Error(result.error || "Error al guardar configuraciones");
-      }
-
-      const result = await response.json();
-
-      addNotification("Configuraciones guardadas correctamente", "success");
+      e.target.reset();
     } catch (err) {
       addNotification(err.message, "error");
     }
@@ -241,30 +216,33 @@ export default function AdminPage({ params }) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      <Navbar />
-      <div className="container mx-auto py-12">
+    <div className="flex min-h-screen bg-gray-100">
+      {/* Sidebar */}
+      <Sidebar shopName={shopName} />
+
+      {/* Contenido principal */}
+      <div className="flex-1 ml-0 md:ml-64 p-6">
         <h1 className="text-3xl font-bold mb-6">
           Administrar {shop.shop_name}
         </h1>
 
         {/* Estadísticas básicas */}
-        <div className="mb-12">
+        <div id="stats" className="mb-12">
           <h2 className="text-2xl font-semibold mb-4">Estadísticas</h2>
-          <div className="bg-white p-6 rounded shadow-md">
+          <div className="bg-white p-6 rounded-lg shadow-md">
             <p className="text-lg">Número de productos: {products.length}</p>
           </div>
         </div>
 
         {/* Listado de productos */}
-        <div className="mb-12">
+        <div id="products" className="mb-12">
           <h2 className="text-2xl font-semibold mb-4">Tus Productos</h2>
           {products.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
               {products.map((product) => (
                 <div
                   key={product.id}
-                  className="bg-white p-4 rounded shadow-md"
+                  className="bg-white p-4 rounded-lg shadow-md"
                 >
                   {product.image_url && (
                     <img
@@ -304,7 +282,7 @@ export default function AdminPage({ params }) {
             <h2 className="text-2xl font-semibold mb-4">Editar Producto</h2>
             <form
               onSubmit={handleUpdateProduct}
-              className="bg-white p-6 rounded shadow-md max-w-lg"
+              className="bg-white p-6 rounded-lg shadow-md max-w-lg"
             >
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700">
@@ -394,7 +372,7 @@ export default function AdminPage({ params }) {
           <h2 className="text-2xl font-semibold mb-4">Agregar Producto</h2>
           <form
             onSubmit={handleAddProduct}
-            className="bg-white p-6 rounded shadow-md max-w-lg"
+            className="bg-white p-6 rounded-lg shadow-md max-w-lg"
             encType="multipart/form-data"
           >
             <input type="hidden" name="shop_id" value={shop.id} />
@@ -457,56 +435,6 @@ export default function AdminPage({ params }) {
               className="w-full bg-blue-600 text-white p-2 rounded hover:bg-blue-700"
             >
               Agregar producto
-            </button>
-          </form>
-        </div>
-
-        {/* Formulario para personalizar la tienda */}
-        <div>
-          <h2 className="text-2xl font-semibold mb-4">Personalizar Tienda</h2>
-          <form
-            onSubmit={handleUpdateSettings}
-            className="bg-white p-6 rounded shadow-md max-w-lg"
-          >
-            <input type="hidden" name="shop_id" value={shop.id} />
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700">
-                Color Primario
-              </label>
-              <input
-                type="color"
-                name="primary_color"
-                defaultValue={settings?.primary_color || "#2563eb"}
-                className="mt-1 p-1 w-full border rounded"
-              />
-            </div>
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700">
-                Color Secundario
-              </label>
-              <input
-                type="color"
-                name="secondary_color"
-                defaultValue={settings?.secondary_color || "#1f2937"}
-                className="mt-1 p-1 w-full border rounded"
-              />
-            </div>
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700">
-                URL del Logo (opcional)
-              </label>
-              <input
-                type="text"
-                name="logo_url"
-                defaultValue={settings?.logo_url || ""}
-                className="mt-1 p-2 w-full border rounded"
-              />
-            </div>
-            <button
-              type="submit"
-              className="w-full bg-blue-600 text-white p-2 rounded hover:bg-blue-700"
-            >
-              Guardar Configuración
             </button>
           </form>
         </div>
