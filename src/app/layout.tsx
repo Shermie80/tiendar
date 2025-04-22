@@ -1,6 +1,6 @@
-// app/layout.tsx
-
 import type { Metadata } from "next";
+import { NotificationProvider } from "@/lib/NotificationContext";
+import Notification from "@/components/Notification";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -15,8 +15,12 @@ export default function RootLayout({
 }) {
   return (
     <html lang="es">
-      <head></head>
-      <body>{children}</body>
+      <body>
+        <NotificationProvider>
+          {children}
+          <Notification />
+        </NotificationProvider>
+      </body>
     </html>
   );
 }

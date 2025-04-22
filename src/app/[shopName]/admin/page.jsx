@@ -4,14 +4,13 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../../lib/supabase";
 import Navbar from "../../../components/Navbar";
+import { useNotification } from "@/lib/NotificationContext";
 
 export default function AdminPage({ params }) {
   const [shop, setShop] = useState(null);
   const [settings, setSettings] = useState(null);
   const [products, setProducts] = useState([]);
   const [editingProduct, setEditingProduct] = useState(null);
-  const [error, setError] = useState(null);
-  const [success, setSuccess] = useState(null);
   const [loading, setLoading] = useState(true);
   const [newProduct, setNewProduct] = useState({
     name: "",
@@ -20,6 +19,7 @@ export default function AdminPage({ params }) {
   });
   const [csrfToken, setCsrfToken] = useState(null);
   const router = useRouter();
+  const { addNotification } = useNotification();
 
   // Verificar autenticación al cargar la página
   useEffect(() => {
@@ -29,10 +29,10 @@ export default function AdminPage({ params }) {
           data: { session },
         } = await supabase.auth.getSession();
         if (!session) {
-          router.push("/login"); // Redirigir a la página de login si no hay sesión
+          router.push("/login");
         }
       } catch (err) {
-        setError("Error al verificar la sesión");
+        addNotification("Error al verificar la sesión", "error");
         setLoading(false);
       }
     };
@@ -52,7 +52,7 @@ export default function AdminPage({ params }) {
         const result = await response.json();
         setCsrfToken(result.csrfToken);
       } catch (err) {
-        setError(err.message);
+        addNotification(err.message, "error");
         setLoading(false);
       }
     };
@@ -79,7 +79,7 @@ export default function AdminPage({ params }) {
         setSettings(result.settings);
         setProducts(result.products);
       } catch (err) {
-        setError(err.message);
+        addNotification(err.message, "error");
       } finally {
         setLoading(false);
       }
@@ -94,10 +94,13 @@ export default function AdminPage({ params }) {
 
   const handleUpdateProduct = async (e) => {
     e.preventDefault();
-    setError(null);
-    setSuccess(null);
 
     const { id, name, description, price, image_url } = editingProduct;
+
+    if (price <= 0) {
+      addNotification("El precio debe ser mayor a 0", "error");
+      return;
+    }
 
     try {
       const response = await fetch("/api/products/update", {
@@ -128,16 +131,13 @@ export default function AdminPage({ params }) {
         )
       );
       setEditingProduct(null);
-      setSuccess("Producto actualizado correctamente");
+      addNotification("Producto actualizado correctamente", "success");
     } catch (err) {
-      setError(err.message);
+      addNotification(err.message, "error");
     }
   };
 
   const handleDeleteProduct = async (productId) => {
-    setError(null);
-    setSuccess(null);
-
     try {
       const response = await fetch("/api/products/delete", {
         method: "POST",
@@ -156,19 +156,24 @@ export default function AdminPage({ params }) {
       const result = await response.json();
 
       setProducts(products.filter((p) => p.id !== productId));
-      setSuccess("Producto eliminado correctamente");
+      addNotification("Producto eliminado correctamente", "success");
     } catch (err) {
-      setError(err.message);
+      addNotification(err.message, "error");
     }
   };
 
   const handleAddProduct = async (e) => {
     e.preventDefault();
-    setError(null);
-    setSuccess(null);
+
+    const formData = new FormData(e.target);
+    const price = parseFloat(formData.get("price"));
+
+    if (price <= 0) {
+      addNotification("El precio debe ser mayor a 0", "error");
+      return;
+    }
 
     try {
-      const formData = new FormData(e.target);
       const response = await fetch("/api/products", {
         method: "POST",
         headers: {
@@ -185,17 +190,16 @@ export default function AdminPage({ params }) {
       const result = await response.json();
 
       setProducts([result.newProduct, ...products]);
-      setSuccess("Producto agregado correctamente");
+      addNotification("Producto agregado correctamente", "success");
       setNewProduct({ name: "", description: "", price: "" });
+      e.target.reset(); // Resetear el formulario
     } catch (err) {
-      setError(err.message);
+      addNotification(err.message, "error");
     }
   };
 
   const handleUpdateSettings = async (e) => {
     e.preventDefault();
-    setError(null);
-    setSuccess(null);
 
     try {
       const formData = new FormData(e.target);
@@ -214,9 +218,9 @@ export default function AdminPage({ params }) {
 
       const result = await response.json();
 
-      setSuccess("Configuraciones guardadas correctamente");
+      addNotification("Configuraciones guardadas correctamente", "success");
     } catch (err) {
-      setError(err.message);
+      addNotification(err.message, "error");
     }
   };
 
@@ -224,14 +228,6 @@ export default function AdminPage({ params }) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <p>Cargando...</p>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <h1 className="text-2xl font-bold">{error}</h1>
       </div>
     );
   }
@@ -374,10 +370,6 @@ export default function AdminPage({ params }) {
                   <p>No hay imagen</p>
                 )}
               </div>
-              {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
-              {success && (
-                <p className="text-green-500 text-sm mb-4">{success}</p>
-              )}
               <div className="space-x-2">
                 <button
                   type="submit"
@@ -460,10 +452,6 @@ export default function AdminPage({ params }) {
                 className="mt-1 p-2 w-full border rounded"
               />
             </div>
-            {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
-            {success && (
-              <p className="text-green-500 text-sm mb-4">{success}</p>
-            )}
             <button
               type="submit"
               className="w-full bg-blue-600 text-white p-2 rounded hover:bg-blue-700"
@@ -514,10 +502,6 @@ export default function AdminPage({ params }) {
                 className="mt-1 p-2 w-full border rounded"
               />
             </div>
-            {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
-            {success && (
-              <p className="text-green-500 text-sm mb-4">{success}</p>
-            )}
             <button
               type="submit"
               className="w-full bg-blue-600 text-white p-2 rounded hover:bg-blue-700"

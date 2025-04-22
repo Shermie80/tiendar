@@ -1,5 +1,3 @@
-// api/logout/route.js
-
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
