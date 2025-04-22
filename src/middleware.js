@@ -12,26 +12,40 @@ export async function middleware(request) {
     return NextResponse.next();
   }
 
+  // Validar variables de entorno
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceRoleKey) {
+    return NextResponse.json(
+      { error: "Faltan variables de entorno de Supabase" },
+      { status: 500 }
+    );
+  }
+
   // Crear cliente de Supabase para verificar autenticación
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    {
-      cookies: {
-        get(name) {
-          return cookieStore.get(name)?.value;
-        },
-        set() {},
-        remove() {},
+  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+    cookies: {
+      get(name) {
+        return cookieStore.get(name)?.value;
       },
-    }
-  );
+      set(name, value, options) {
+        // Esto se usará para actualizar las cookies en la respuesta
+      },
+      remove(name, options) {
+        // Esto se usará para eliminar cookies en la respuesta
+      },
+    },
+  });
 
+  // Obtener la sesión del usuario
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
 
-  if (!user) {
+  // Si no hay sesión, redirigir a /login
+  if (!session) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
@@ -39,8 +53,8 @@ export async function middleware(request) {
   if (path.includes("/admin")) {
     // Crear cliente de Supabase con service role key para verificar propiedad
     const supabaseAdmin = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY,
+      supabaseUrl,
+      supabaseServiceRoleKey,
       {
         cookies: {
           get() {
@@ -56,7 +70,7 @@ export async function middleware(request) {
       .from("shops")
       .select("id")
       .eq("shop_name", shopName)
-      .eq("user_id", user.id)
+      .eq("user_id", session.user.id)
       .single();
 
     if (error || !shop) {
@@ -64,7 +78,28 @@ export async function middleware(request) {
     }
   }
 
-  return NextResponse.next();
+  // Continuar con la solicitud y actualizar las cookies en la respuesta
+  const response = NextResponse.next();
+
+  // Actualizar las cookies de la sesión en la respuesta
+  if (session) {
+    response.cookies.set(
+      "sb-vxipkqfzmumfyzumsryb-auth-token",
+      JSON.stringify({
+        access_token: session.access_token,
+        refresh_token: session.refresh_token,
+        expires_at: session.expires_at,
+      }),
+      {
+        path: "/",
+        sameSite: "lax",
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+      }
+    );
+  }
+
+  return response;
 }
 
 export const config = {

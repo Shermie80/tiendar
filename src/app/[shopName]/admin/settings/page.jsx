@@ -1,85 +1,18 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { supabase } from "../../../../lib/supabase";
+import { useEffect } from "react";
 import Sidebar from "../../../../components/Sidebar";
 import { useNotification } from "@/lib/NotificationContext";
+import { useShop } from "@/lib/ShopContext";
 
 export default function SettingsPage({ params }) {
-  const [shop, setShop] = useState(null);
-  const [settings, setSettings] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [csrfToken, setCsrfToken] = useState(null);
-  const router = useRouter();
+  const { shopData, fetchShopData, loading, csrfToken } = useShop();
   const { addNotification } = useNotification();
   const { shopName } = params;
 
-  // Verificar autenticación al cargar la página
   useEffect(() => {
-    const checkSession = async () => {
-      try {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-        if (!session) {
-          router.push("/login");
-        }
-      } catch (err) {
-        addNotification("Error al verificar la sesión", "error");
-        setLoading(false);
-      }
-    };
-
-    checkSession();
-  }, [router]);
-
-  // Obtener token CSRF al cargar la página
-  useEffect(() => {
-    const fetchCsrfToken = async () => {
-      try {
-        const response = await fetch("/api/csrf-token");
-        if (!response.ok) {
-          const result = await response.json();
-          throw new Error(result.error || "Error al obtener el token CSRF");
-        }
-        const result = await response.json();
-        setCsrfToken(result.csrfToken);
-      } catch (err) {
-        addNotification(err.message, "error");
-        setLoading(false);
-      }
-    };
-
-    fetchCsrfToken();
-  }, []);
-
-  // Obtener datos iniciales
-  useEffect(() => {
-    const fetchData = async () => {
-      const shopName = params.shopName;
-
-      try {
-        const response = await fetch(`/api/shop-data?shopName=${shopName}`);
-        if (!response.ok) {
-          const result = await response.json();
-          throw new Error(
-            result.error || "Error al cargar los datos de la tienda"
-          );
-        }
-        const result = await response.json();
-
-        setShop(result.shop);
-        setSettings(result.settings);
-      } catch (err) {
-        addNotification(err.message, "error");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-  }, [params]);
+    fetchShopData(shopName);
+  }, [shopName, fetchShopData]);
 
   const handleUpdateSettings = async (e) => {
     e.preventDefault();
@@ -101,6 +34,13 @@ export default function SettingsPage({ params }) {
 
       const result = await response.json();
 
+      // Actualizar el estado global con las nuevas configuraciones
+      shopData.settings = {
+        primary_color: formData.get("primary_color"),
+        secondary_color: formData.get("secondary_color"),
+        logo_url: formData.get("logo_url") || null,
+      };
+
       addNotification("Configuraciones guardadas correctamente", "success");
     } catch (err) {
       addNotification(err.message, "error");
@@ -109,19 +49,26 @@ export default function SettingsPage({ params }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p>Cargando...</p>
+      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+        <div className="flex flex-col items-center">
+          <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+          <p className="mt-4 text-lg text-gray-700">
+            Cargando datos de la tienda...
+          </p>
+        </div>
       </div>
     );
   }
 
-  if (!shop) {
+  if (!shopData || !shopData.shop) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <p>No se encontraron datos de la tienda.</p>
       </div>
     );
   }
+
+  const { shop, settings } = shopData;
 
   return (
     <div className="flex min-h-screen bg-gray-100">

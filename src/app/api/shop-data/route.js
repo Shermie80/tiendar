@@ -1,6 +1,13 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { LRUCache } from "lru-cache";
+
+// Configurar el caché
+const cache = new LRUCache({
+  max: 100, // Máximo 100 entradas
+  ttl: 1000 * 60 * 5, // 5 minutos de vida para cada entrada
+});
 
 export async function GET(request) {
   try {
@@ -16,52 +23,65 @@ export async function GET(request) {
 
     const cookieStore = cookies();
 
+    // Validar variables de entorno
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceRoleKey) {
+      return NextResponse.json(
+        { error: "Faltan variables de entorno de Supabase" },
+        { status: 500 }
+      );
+    }
+
     // Crear cliente de Supabase con anon key para verificar autenticación
-    const supabaseAuth = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-      {
-        cookies: {
-          get(name) {
-            return cookieStore.get(name)?.value;
-          },
-          set() {},
-          remove() {},
+    const supabaseAuth = createServerClient(supabaseUrl, supabaseAnonKey, {
+      cookies: {
+        get(name) {
+          return cookieStore.get(name)?.value;
         },
-      }
-    );
+        set() {},
+        remove() {},
+      },
+    });
 
     const {
       data: { user },
+      error: userError,
     } = await supabaseAuth.auth.getUser();
 
-    if (!user) {
+    if (userError || !user) {
       return NextResponse.json(
         { error: "No autorizado: usuario no autenticado" },
         { status: 401 }
       );
     }
 
-    // Crear cliente de Supabase con service role key para operaciones
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY,
-      {
-        cookies: {
-          get() {
-            return undefined;
-          },
-          set() {},
-          remove() {},
-        },
-      }
-    );
+    // Generar una clave para el caché
+    const cacheKey = `shop-data-${shopName}-${user.id}`;
+    const cachedData = cache.get(cacheKey);
+    if (cachedData) {
+      return NextResponse.json(cachedData, { status: 200 });
+    }
 
-    // Buscar la tienda por shop_name
+    // Crear cliente de Supabase con service role key para operaciones
+    const supabase = createServerClient(supabaseUrl, supabaseServiceRoleKey, {
+      cookies: {
+        get() {
+          return undefined;
+        },
+        set() {},
+        remove() {},
+      },
+    });
+
+    // Buscar la tienda por shop_name y verificar el propietario
     const { data: shop, error: shopError } = await supabase
       .from("shops")
       .select("id, shop_name, user_id")
       .eq("shop_name", shopName)
+      .eq("user_id", user.id)
       .single();
 
     if (shopError || !shop) {
@@ -71,15 +91,7 @@ export async function GET(request) {
       );
     }
 
-    // Verificar que la tienda pertenece al usuario autenticado
-    if (shop.user_id !== user.id) {
-      return NextResponse.json(
-        { error: "No autorizado: la tienda no pertenece al usuario" },
-        { status: 403 }
-      );
-    }
-
-    // Obtener configuraciones de la tienda
+    // Obtener configuraciones y productos en una sola consulta usando RPC o múltiples selects
     const { data: settings, error: settingsError } = await supabase
       .from("shop_settings")
       .select("primary_color, secondary_color, logo_url")
@@ -93,7 +105,6 @@ export async function GET(request) {
       );
     }
 
-    // Obtener productos de la tienda
     const { data: products, error: productsError } = await supabase
       .from("products")
       .select("id, name, description, price, image_url")
@@ -106,18 +117,20 @@ export async function GET(request) {
       );
     }
 
-    return NextResponse.json(
-      {
-        shop,
-        settings: settings || {
-          primary_color: "#2563eb",
-          secondary_color: "#1f2937",
-          logo_url: null,
-        }, // Valores por defecto
-        products: products || [],
+    const responseData = {
+      shop,
+      settings: settings || {
+        primary_color: "#2563eb",
+        secondary_color: "#1f2937",
+        logo_url: null,
       },
-      { status: 200 }
-    );
+      products: products || [],
+    };
+
+    // Guardar en el caché
+    cache.set(cacheKey, responseData);
+
+    return NextResponse.json(responseData, { status: 200 });
   } catch (err) {
     return NextResponse.json(
       { error: "Error interno del servidor: " + err.message },

@@ -4,8 +4,16 @@ import { generateCsrfToken } from "lib/csrf";
 
 export async function GET() {
   try {
-    const csrfToken = generateCsrfToken();
     const cookieStore = cookies();
+    const existingToken = cookieStore.get("csrf_token")?.value;
+
+    // Si ya existe un token CSRF en la cookie, devolverlo
+    if (existingToken) {
+      return NextResponse.json({ csrfToken: existingToken }, { status: 200 });
+    }
+
+    // Si no existe, generar uno nuevo
+    const csrfToken = generateCsrfToken();
 
     // Almacenar el token CSRF en una cookie
     cookieStore.set("csrf_token", csrfToken, {

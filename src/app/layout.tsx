@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { NotificationProvider } from "@/lib/NotificationContext";
 import Notification from "@/components/Notification";
-import Navbar from "@/components/Navbar";
+import { ShopProvider } from "../lib/ShopContext";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -18,8 +18,7 @@ export default function RootLayout({
     <html lang="es">
       <body>
         <NotificationProvider>
-          <Navbar />
-          {children}
+          <ShopProvider>{children}</ShopProvider>
           <Notification />
         </NotificationProvider>
       </body>
