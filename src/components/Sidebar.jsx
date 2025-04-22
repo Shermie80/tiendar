@@ -1,81 +1,70 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "../lib/supabase";
+import { useNotification } from "../lib/NotificationContext";
 
-const Sidebar = ({ shopName }) => {
-  const [isOpen, setIsOpen] = useState(false);
+export default function Sidebar({ shopName }) {
   const router = useRouter();
-
-  const menuItems = [
-    { name: "Estadísticas", path: `/${shopName}/admin` },
-    { name: "Productos", path: `/${shopName}/admin` },
-    { name: "Personalizar Tienda", path: `/${shopName}/admin/settings` },
-  ];
+  const { addNotification } = useNotification();
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.push("/login");
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+
+      await fetch("/api/auth/remove-session", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      addNotification("Sesión cerrada correctamente", "success");
+      router.push("/login");
+    } catch (err) {
+      addNotification("Error al cerrar sesión: " + err.message, "error");
+    }
   };
 
   return (
-    <>
-      {/* Botón para abrir/cerrar en pantallas pequeñas */}
-      <button
-        className="md:hidden fixed top-4 left-4 z-50 p-2 bg-blue-600 text-white rounded"
-        onClick={() => setIsOpen(!isOpen)}
-      >
-        {isOpen ? "✕" : "☰"}
-      </button>
-
-      {/* Sidebar */}
-      <div
-        className={`fixed top-0 left-0 h-full w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out z-40 ${
-          isOpen ? "translate-x-0" : "-translate-x-full"
-        } md:translate-x-0 md:w-64 flex flex-col justify-between`}
-      >
-        <div className="p-4">
-          <h2 className="text-xl font-bold text-gray-800 mb-6">Tiendar</h2>
-          <nav>
-            <ul className="space-y-2">
-              {menuItems.map((item) => (
-                <li key={item.name}>
-                  <a
-                    href={item.path}
-                    className="block p-2 text-gray-700 hover:bg-gray-100 rounded"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      router.push(item.path);
-                      setIsOpen(false);
-                    }}
-                  >
-                    {item.name}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </nav>
-        </div>
-        <div className="p-4">
-          <button
-            onClick={handleLogout}
-            className="w-full bg-red-500 text-white p-2 rounded hover:bg-red-600"
-          >
-            Cerrar Sesión
-          </button>
-        </div>
+    <div className="fixed top-0 left-0 h-full w-64 bg-gray-800 text-white p-6">
+      <h2 className="text-2xl font-bold mb-6">{shopName}</h2>
+      <nav className="flex flex-col space-y-4">
+        <Link
+          href={`/${shopName}/admin`}
+          className="text-lg hover:bg-gray-700 p-2 rounded"
+        >
+          Escritorio
+        </Link>
+        <Link
+          href={`/${shopName}/admin/products`}
+          className="text-lg hover:bg-gray-700 p-2 rounded"
+        >
+          Productos
+        </Link>
+        <Link
+          href={`/${shopName}/admin/settings`}
+          className="text-lg hover:bg-gray-700 p-2 rounded"
+        >
+          Personalizar Tienda
+        </Link>
+      </nav>
+      <div className="absolute bottom-6 left-6 right-6 space-y-4">
+        <Link
+          href={`/${shopName}`}
+          className="block w-full bg-blue-600 text-white text-center p-2 rounded hover:bg-blue-700"
+        >
+          Ver Tienda
+        </Link>
+        <button
+          onClick={handleLogout}
+          className="w-full bg-red-600 text-white p-2 rounded hover:bg-red-600"
+        >
+          Cerrar Sesión
+        </button>
       </div>
-
-      {/* Overlay para cerrar la sidebar en pantallas pequeñas */}
-      {isOpen && (
-        <div
-          className="fixed inset-0 bg-black opacity-50 md:hidden z-30"
-          onClick={() => setIsOpen(false)}
-        />
-      )}
-    </>
+    </div>
   );
-};
-
-export default Sidebar;
+}

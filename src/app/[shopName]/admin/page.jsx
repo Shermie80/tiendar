@@ -1,130 +1,16 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import Sidebar from "../../../components/Sidebar";
-import { useNotification } from "@/lib/NotificationContext";
+import { useEffect } from "react";
+import Sidebar from "@/components/Sidebar";
 import { useShop } from "@/lib/ShopContext";
 
 export default function AdminPage({ params }) {
-  const [editingProduct, setEditingProduct] = useState(null);
-  const [newProduct, setNewProduct] = useState({
-    name: "",
-    description: "",
-    price: "",
-  });
-  const { shopData, fetchShopData, loading, csrfToken } = useShop();
-  const { addNotification } = useNotification();
+  const { shopData, fetchShopData, loading } = useShop();
   const { shopName } = params;
 
   useEffect(() => {
     fetchShopData(shopName);
   }, [shopName, fetchShopData]);
-
-  const handleEditProduct = (product) => {
-    setEditingProduct({ ...product });
-  };
-
-  const handleUpdateProduct = async (e) => {
-    e.preventDefault();
-
-    const { id, name, description, price, image_url } = editingProduct;
-
-    if (price <= 0) {
-      addNotification("El precio debe ser mayor a 0", "error");
-      return;
-    }
-
-    try {
-      const response = await fetch("/api/products/update", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-csrf-token": csrfToken,
-        },
-        body: JSON.stringify({
-          product_id: id,
-          name,
-          description,
-          price,
-          image_url,
-        }),
-      });
-
-      if (!response.ok) {
-        const result = await response.json();
-        throw new Error(result.error || "Error al actualizar el producto");
-      }
-
-      const result = await response.json();
-
-      shopData.products = shopData.products.map((p) =>
-        p.id === id ? { ...p, name, description, price, image_url } : p
-      );
-      setEditingProduct(null);
-      addNotification("Producto actualizado correctamente", "success");
-    } catch (err) {
-      addNotification(err.message, "error");
-    }
-  };
-
-  const handleDeleteProduct = async (productId) => {
-    try {
-      const response = await fetch("/api/products/delete", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-csrf-token": csrfToken,
-        },
-        body: JSON.stringify({ product_id: productId }),
-      });
-
-      if (!response.ok) {
-        const result = await response.json();
-        throw new Error(result.error || "Error al eliminar el producto");
-      }
-
-      shopData.products = shopData.products.filter((p) => p.id !== productId);
-      addNotification("Producto eliminado correctamente", "success");
-    } catch (err) {
-      addNotification(err.message, "error");
-    }
-  };
-
-  const handleAddProduct = async (e) => {
-    e.preventDefault();
-
-    const formData = new FormData(e.target);
-    const price = parseFloat(formData.get("price"));
-
-    if (price <= 0) {
-      addNotification("El precio debe ser mayor a 0", "error");
-      return;
-    }
-
-    try {
-      const response = await fetch("/api/products", {
-        method: "POST",
-        headers: {
-          "x-csrf-token": csrfToken,
-        },
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const result = await response.json();
-        throw new Error(result.error || "Error al agregar el producto");
-      }
-
-      const result = await response.json();
-
-      shopData.products = [result.newProduct, ...shopData.products];
-      addNotification("Producto agregado correctamente", "success");
-      setNewProduct({ name: "", description: "", price: "" });
-      e.target.reset();
-    } catch (err) {
-      addNotification(err.message, "error");
-    }
-  };
 
   if (loading) {
     return (
@@ -147,7 +33,7 @@ export default function AdminPage({ params }) {
     );
   }
 
-  const { shop, settings, products } = shopData;
+  const { shop } = shopData;
 
   return (
     <div className="flex min-h-screen bg-gray-100">
@@ -160,217 +46,15 @@ export default function AdminPage({ params }) {
           Administrar {shop.shop_name}
         </h1>
 
-        {/* Estadísticas básicas */}
-        <div id="stats" className="mb-12">
-          <h2 className="text-2xl font-semibold mb-4">Estadísticas</h2>
-          <div className="bg-white p-6 rounded-lg shadow-md">
-            <p className="text-lg">Número de productos: {products.length}</p>
-          </div>
-        </div>
-
-        {/* Listado de productos */}
-        <div id="products" className="mb-12">
-          <h2 className="text-2xl font-semibold mb-4">Tus Productos</h2>
-          {products.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
-              {products.map((product) => (
-                <div
-                  key={product.id}
-                  className="bg-white p-4 rounded-lg shadow-md"
-                >
-                  {product.image_url && (
-                    <img
-                      src={product.image_url}
-                      alt={product.name}
-                      className="w-full h-48 object-cover rounded mb-4"
-                    />
-                  )}
-                  <h3 className="text-xl font-semibold">{product.name}</h3>
-                  <p className="text-gray-600">{product.description}</p>
-                  <p className="text-lg font-bold mt-2">${product.price}</p>
-                  <div className="mt-4 space-x-2">
-                    <button
-                      onClick={() => handleEditProduct(product)}
-                      className="bg-yellow-500 text-white px-3 py-1 rounded hover:bg-yellow-600"
-                    >
-                      Editar
-                    </button>
-                    <button
-                      onClick={() => handleDeleteProduct(product.id)}
-                      className="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600"
-                    >
-                      Eliminar
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p>No hay productos disponibles.</p>
-          )}
-        </div>
-
-        {/* Formulario para editar producto */}
-        {editingProduct && (
-          <div className="mb-12">
-            <h2 className="text-2xl font-semibold mb-4">Editar Producto</h2>
-            <form
-              onSubmit={handleUpdateProduct}
-              className="bg-white p-6 rounded-lg shadow-md max-w-lg"
-            >
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700">
-                  Nombre del producto
-                </label>
-                <input
-                  type="text"
-                  value={editingProduct.name}
-                  onChange={(e) =>
-                    setEditingProduct({
-                      ...editingProduct,
-                      name: e.target.value,
-                    })
-                  }
-                  className="mt-1 p-2 w-full border rounded"
-                  required
-                />
-              </div>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700">
-                  Descripción
-                </label>
-                <textarea
-                  value={editingProduct.description || ""}
-                  onChange={(e) =>
-                    setEditingProduct({
-                      ...editingProduct,
-                      description: e.target.value,
-                    })
-                  }
-                  className="mt-1 p-2 w-full border rounded"
-                />
-              </div>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700">
-                  Precio
-                </label>
-                <input
-                  type="number"
-                  value={editingProduct.price}
-                  onChange={(e) =>
-                    setEditingProduct({
-                      ...editingProduct,
-                      price: parseFloat(e.target.value),
-                    })
-                  }
-                  step="0.01"
-                  className="mt-1 p-2 w-full border rounded"
-                  required
-                />
-              </div>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700">
-                  Imagen actual (no editable)
-                </label>
-                {editingProduct.image_url ? (
-                  <img
-                    src={editingProduct.image_url}
-                    alt="Imagen actual"
-                    className="w-32 h-32 object-cover rounded"
-                  />
-                ) : (
-                  <p>No hay imagen</p>
-                )}
-              </div>
-              <div className="space-x-2">
-                <button
-                  type="submit"
-                  className="bg-blue-600 text-white p-2 rounded hover:bg-blue-700"
-                >
-                  Guardar Cambios
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setEditingProduct(null)}
-                  className="bg-gray-500 text-white p-2 rounded hover:bg-gray-600"
-                >
-                  Cancelar
-                </button>
-              </div>
-            </form>
-          </div>
-        )}
-
-        {/* Formulario para agregar productos */}
+        {/* Escritorio */}
         <div className="mb-12">
-          <h2 className="text-2xl font-semibold mb-4">Agregar Producto</h2>
-          <form
-            onSubmit={handleAddProduct}
-            className="bg-white p-6 rounded-lg shadow-md max-w-lg"
-            encType="multipart/form-data"
-          >
-            <input type="hidden" name="shop_id" value={shop.id} />
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700">
-                Nombre del producto
-              </label>
-              <input
-                type="text"
-                name="name"
-                value={newProduct.name}
-                onChange={(e) =>
-                  setNewProduct({ ...newProduct, name: e.target.value })
-                }
-                className="mt-1 p-2 w-full border rounded"
-                required
-              />
-            </div>
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700">
-                Descripción
-              </label>
-              <textarea
-                name="description"
-                value={newProduct.description}
-                onChange={(e) =>
-                  setNewProduct({ ...newProduct, description: e.target.value })
-                }
-                className="mt-1 p-2 w-full border rounded"
-              />
-            </div>
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700">
-                Precio
-              </label>
-              <input
-                type="number"
-                name="price"
-                value={newProduct.price}
-                onChange={(e) =>
-                  setNewProduct({ ...newProduct, price: e.target.value })
-                }
-                step="0.01"
-                className="mt-1 p-2 w-full border rounded"
-                required
-              />
-            </div>
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700">
-                Imagen (opcional)
-              </label>
-              <input
-                type="text"
-                name="image_url"
-                className="mt-1 p-2 w-full border rounded"
-              />
-            </div>
-            <button
-              type="submit"
-              className="w-full bg-blue-600 text-white p-2 rounded hover:bg-blue-700"
-            >
-              Agregar producto
-            </button>
-          </form>
+          <h2 className="text-2xl font-semibold mb-4">Escritorio</h2>
+          <div className="bg-white p-6 rounded-lg shadow-md">
+            <p className="text-lg text-gray-600">
+              ¡Bienvenido al escritorio! Aquí pronto verás notificaciones y
+              actualizaciones importantes. 🚀
+            </p>
+          </div>
         </div>
       </div>
     </div>
