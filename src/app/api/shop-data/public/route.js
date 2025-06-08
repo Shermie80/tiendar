@@ -5,6 +5,7 @@ export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
     const shopName = searchParams.get("shopName");
+    const productId = searchParams.get("productId");
 
     if (!shopName) {
       return NextResponse.json(
@@ -56,7 +57,37 @@ export async function GET(request) {
       );
     }
 
-    // Obtener productos de la tienda
+    // Si se proporciona productId, devolver solo el producto solicitado
+    if (productId) {
+      const { data: product, error: productError } = await supabase
+        .from("products")
+        .select("id, name, description, price, image_url")
+        .eq("id", productId)
+        .eq("shop_id", shop.id)
+        .single();
+
+      if (productError || !product) {
+        return NextResponse.json(
+          { error: "Producto no encontrado" },
+          { status: 404 }
+        );
+      }
+
+      return NextResponse.json(
+        {
+          shop,
+          settings: settings || {
+            primary_color: "#2563eb",
+            secondary_color: "#1f2937",
+            logo_url: null,
+          },
+          product,
+        },
+        { status: 200 }
+      );
+    }
+
+    // Si no se proporciona productId, devolver todos los productos
     const { data: products, error: productsError } = await supabase
       .from("products")
       .select("id, name, description, price, image_url")
@@ -76,7 +107,7 @@ export async function GET(request) {
           primary_color: "#2563eb",
           secondary_color: "#1f2937",
           logo_url: null,
-        }, // Valores por defecto
+        },
         products: products || [],
       },
       { status: 200 }

@@ -3,6 +3,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import Navbar from "../../components/Navbar";
 
 export default function ShopPage({ params }) {
@@ -45,7 +46,11 @@ export default function ShopPage({ params }) {
   }
 
   if (!shop || !settings) {
-    return <div>Cargando...</div>;
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+      </div>
+    );
   }
 
   return (
@@ -73,7 +78,11 @@ export default function ShopPage({ params }) {
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
           {products.length > 0 ? (
             products.map((product) => (
-              <div key={product.id} className="bg-white p-4 rounded shadow-md">
+              <Link
+                key={product.id}
+                href={`/${shop.shop_name}/${product.id}`}
+                className="bg-white p-4 rounded shadow-md hover:shadow-lg transition-shadow"
+              >
                 {product.image_url && (
                   <img
                     src={product.image_url}
@@ -84,7 +93,7 @@ export default function ShopPage({ params }) {
                 <h3 className="text-xl font-semibold">{product.name}</h3>
                 <p className="text-gray-600">{product.description}</p>
                 <p className="text-lg font-bold mt-2">${product.price}</p>
-              </div>
+              </Link>
             ))
           ) : (
             <p className="text-center col-span-full">
